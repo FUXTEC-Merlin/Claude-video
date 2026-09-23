@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #0b0d12;
+  color: #e8eaf0;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2f3f;
+  border-radius: 6px;
+}
+
+.card {
+  background-color: #141821;
+  border: 1px solid #242938;
+  border-radius: 14px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 10px;
+  padding: 0.6rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn:not(:disabled):active {
+  transform: scale(0.98);
+}
+.btn-primary {
+  background: linear-gradient(135deg, #7c5cff, #6a3ffb);
+  color: white;
+}
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.92;
+}
+.btn-secondary {
+  background: #1c2130;
+  color: #e8eaf0;
+  border: 1px solid #2a2f3f;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #232838;
+}
+.btn-danger {
+  background: #3a1620;
+  color: #ff8fa3;
+  border: 1px solid #5a1f2e;
+}
+
+.input,
+.select,
+.textarea {
+  background: #0f1219;
+  border: 1px solid #242938;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  color: #e8eaf0;
+  font-size: 0.9rem;
+  width: 100%;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: #7c5cff;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
