@@ -30,6 +30,8 @@ export function getDurationSeconds(filePath: string): Promise<number> {
   });
 }
 
+const MAX_FRAME_EDGE = 1920;
+
 /**
  * Samples evenly spaced JPEG frames from a video, capped at maxFrames so a
  * long recording still produces a Claude-vision-friendly prompt size.
@@ -46,7 +48,11 @@ export async function extractFrames(
 
   await new Promise<void>((resolve, reject) => {
     ffmpeg(videoPath)
-      .outputOptions([`-vf fps=1/${intervalSeconds}`, "-q:v 3"])
+      .outputOptions([
+        // Claude rejects images over 2000 px per side when a request has more than 20 images.
+        `-vf fps=1/${intervalSeconds},scale=w='min(${MAX_FRAME_EDGE},iw)':h='min(${MAX_FRAME_EDGE},ih)':force_original_aspect_ratio=decrease`,
+        "-q:v 3"
+      ])
       .output(path.join(outDir, "frame-%04d.jpg"))
       .on("end", () => resolve())
       .on("error", (err) => reject(err))

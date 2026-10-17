@@ -52,8 +52,14 @@ export default function ScriptEditor({ segments, durationSeconds, onChange }: Sc
         .map((s) => ({ id: s.id, start: s.start, audioDuration: estimateSpeechSeconds(s.text) })),
       durationSeconds
     );
+    // The renderer ignores `end`: each segment may speak until the next one starts.
+    const sorted = [...segments].sort((a, b) => a.start - b.start);
+    const slotEndById = new Map(
+      sorted.map((s, i) => [s.id, Math.min(sorted[i + 1]?.start ?? durationSeconds, durationSeconds)])
+    );
     return {
       byId: new Map(timeline.placements.map((p) => [p.id, p])),
+      slotEndById,
       extraSeconds: timeline.outputDuration - durationSeconds
     };
   }, [segments, durationSeconds]);
@@ -106,17 +112,11 @@ export default function ScriptEditor({ segments, durationSeconds, onChange }: Sc
                 value={segment.start}
                 onChange={(e) => updateSegment(segment.id, { start: Number(e.target.value) })}
               />
-              <span>Ende</span>
-              <input
-                type="number"
-                step="0.1"
-                className="input !w-20 !py-1"
-                value={segment.end}
-                onChange={(e) => updateSegment(segment.id, { end: Number(e.target.value) })}
-              />
               <span className="ml-auto flex items-center gap-2">
                 <FitBadge placement={estimate.byId.get(segment.id)} />
-                {formatTime(segment.start)} – {formatTime(segment.end)}
+                <span title="Die Stimme darf bis zum Start des nächsten Segments sprechen.">
+                  {formatTime(segment.start)} – {formatTime(estimate.slotEndById.get(segment.id) ?? segment.end)}
+                </span>
               </span>
               <button
                 className="text-red-400 hover:text-red-300"

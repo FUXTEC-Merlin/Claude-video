@@ -5,7 +5,13 @@ import type { JobMeta } from "./types";
 
 const DATA_ROOT = path.join(process.cwd(), "data", "jobs");
 
+const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 export function jobDir(id: string): string {
+  // The id comes from the URL; anything but a UUID could escape DATA_ROOT.
+  if (!JOB_ID_PATTERN.test(id)) {
+    throw new Error(`Job ${id} wurde nicht gefunden.`);
+  }
   return path.join(DATA_ROOT, id);
 }
 
