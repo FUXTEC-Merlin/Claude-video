@@ -1,5 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { z } from "zod/v4";
+import { WORDS_PER_SECOND } from "./timeline";
 import type { AnalysisResult, AnalyzeRequestBody } from "./types";
+
+const DEFAULT_MODEL = "claude-opus-5-5";
 
 let client: Anthropic | null = null;
 
@@ -23,6 +28,29 @@ const TONE_LABELS: Record<AnalyzeRequestBody["tone"], string> = {
   professional: "sachlich, professionell, wie eine Produktdemo für Business-Kunden"
 };
 
+const AnalysisSchema = z.object({
+  topic: z.string().describe("Kurzer erkannter Titel/Thema, z.B. Software- oder Toolname"),
+  title: z.string().describe("Knackiger YouTube-Videotitel (max. 70 Zeichen)"),
+  description: z
+    .string()
+    .describe("2-4 Sätze YouTube-Videobeschreibung inkl. relevanter Keywords"),
+  chapters: z.array(
+    z.object({
+      time: z.number().describe("Startzeit des Kapitels in Sekunden"),
+      label: z.string()
+    })
+  ),
+  segments: z.array(
+    z.object({
+      start: z.number().describe("Startzeit in Sekunden"),
+      end: z.number().describe("Endzeit in Sekunden"),
+      text: z.string().describe("Gesprochener Voiceover-Text für dieses Zeitfenster")
+    })
+  )
+});
+
+type RawAnalysis = z.infer<typeof AnalysisSchema>;
+
 export interface FrameInput {
   base64: string;
   timestampSeconds: number;
@@ -36,6 +64,7 @@ export async function analyzeFramesWithClaude(
   const anthropic = getClient();
   const language = options.language === "en" ? "English" : "Deutsch";
   const toneDescription = TONE_LABELS[options.tone] ?? TONE_LABELS.enthusiastic;
+  const duration = durationSeconds.toFixed(1);
 
   const imageBlocks = frames.flatMap((frame) => [
     {
@@ -56,22 +85,26 @@ export async function analyzeFramesWithClaude(
     ? `Zusätzlicher Kontext vom Nutzer: "${options.context}"`
     : "Kein zusätzlicher Kontext gegeben — erkenne Tool und Thema ausschließlich aus den Screenshots.";
 
-  const jsonSchemaHint = `{
-  "topic": "kurzer erkannter Titel/Thema, z.B. Software- oder Toolname",
-  "title": "knackiger YouTube-Videotitel (max. 70 Zeichen)",
-  "description": "2-4 Sätze YouTube-Videobeschreibung inkl. relevanter Keywords",
-  "chapters": [ { "time": 0, "label": "Intro" }, ... ],
-  "segments": [ { "start": 0.0, "end": 4.5, "text": "gesprochener Voiceover-Text für dieses Zeitfenster" } ]
-}`;
+  const system = `Du bist ein erfahrener YouTube-Skriptautor, der aus stummen Screen-Recordings (Tool-Demos, Software-Vorstellungen, Tutorials) ein synchrones Voiceover-Skript schreibt. Du bekommst eine zeitlich geordnete Reihe von Screenshots mit Zeitstempeln aus einem ${duration} Sekunden langen Video.
 
-  const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
-    max_tokens: 4096,
-    system: `Du bist ein erfahrener YouTube-Skriptautor, der aus stummen Screen-Recordings (Tool-Demos, Software-Vorstellungen, Tutorials) ein synchrones Voiceover-Skript schreibt. Du bekommst eine zeitlich geordnete Reihe von Screenshots mit Zeitstempeln aus einem ${durationSeconds.toFixed(
-      1
-    )} Sekunden langen Video. Analysiere genau, welche Anwendung/Website/Software gezeigt wird und was der Nutzer Schritt für Schritt tut (Klicks, Eingaben, Navigation, Ergebnisse). Schreibe daraus ein natürliches, ${toneDescription} Voiceover-Skript auf ${language}, das in kurze Segmente unterteilt ist. Jedes Segment muss zeitlich zu dem passen, was auf dem Screenshot in diesem Zeitraum zu sehen ist — die Zeitstempel der Segmente müssen sich an den gegebenen Frame-Zeitstempeln orientieren und dürfen die Gesamtlänge ${durationSeconds.toFixed(
-      1
-    )}s nicht überschreiten. Segmente dürfen sich nicht überlappen. Plane pro Segment realistische Sprechzeit (ca. 2.3 Wörter pro Sekunde bei normaler Sprechgeschwindigkeit), damit die spätere KI-Stimme zeitlich passt — schreibe also nicht mehr Text hinein, als in der Segmentdauer natürlich sprechbar ist. Antworte AUSSCHLIESSLICH mit validem JSON exakt in diesem Format, ohne Markdown-Codeblock, ohne Erklärtext:\n${jsonSchemaHint}`,
+Analysiere genau, welche Anwendung/Website/Software gezeigt wird und was der Nutzer Schritt für Schritt tut (Klicks, Eingaben, Navigation, Ergebnisse). Schreibe daraus ein natürliches Voiceover-Skript auf ${language} im Stil: ${toneDescription}.
+
+Regeln für die Segmente:
+- Jedes Segment beschreibt, was in seinem Zeitfenster zu sehen ist; orientiere dich an den Frame-Zeitstempeln.
+- Segmente überlappen sich nicht und enden spätestens bei ${duration}s.
+- Die spätere KI-Stimme spricht etwa ${WORDS_PER_SECOND} Wörter pro Sekunde. Schreibe pro Segment höchstens so viel Text, wie in seiner Dauer natürlich sprechbar ist. Wird es zu lang, muss das Video an dieser Stelle angehalten werden — das wirkt unruhig, also lieber knapper formulieren.
+- Kurze Pausen zwischen Segmenten sind gut, wenn auf dem Bildschirm gerade nichts Erklärenswertes passiert.`;
+
+  const response = await anthropic.beta.messages.parse({
+    model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium", format: betaZodOutputFormat(AnalysisSchema) },
+    // Server-side fallback: if the model declines for policy reasons, the API retries
+    // on its default fallback model within the same call.
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    system,
     messages: [
       {
         role: "user",
@@ -81,70 +114,49 @@ export async function analyzeFramesWithClaude(
             text: `${contextHint}\n\nHier sind die Screenshots in zeitlicher Reihenfolge:`
           },
           ...imageBlocks,
-          {
-            type: "text",
-            text: "Erstelle jetzt das JSON-Skript wie im System-Prompt beschrieben."
-          }
+          { type: "text", text: "Erstelle jetzt das Voiceover-Skript." }
         ]
       }
     ]
   });
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Claude hat keine Textantwort geliefert.");
+  if (response.stop_reason === "refusal") {
+    throw new Error("Claude hat die Analyse dieser Aufnahme abgelehnt.");
+  }
+  if (response.stop_reason === "max_tokens") {
+    throw new Error("Die Claude-Antwort wurde abgeschnitten (max_tokens erreicht).");
+  }
+  if (!response.parsed_output) {
+    throw new Error("Claude hat kein gültiges Skript geliefert.");
   }
 
-  const parsed = extractJson(textBlock.text);
-  return normalizeAnalysis(parsed, durationSeconds);
+  return normalizeAnalysis(response.parsed_output, durationSeconds);
 }
 
-function extractJson(raw: string): unknown {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1] : trimmed;
-  try {
-    return JSON.parse(candidate);
-  } catch (err) {
-    const firstBrace = candidate.indexOf("{");
-    const lastBrace = candidate.lastIndexOf("}");
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
-    }
-    throw new Error(`Konnte Claude-Antwort nicht als JSON parsen: ${(err as Error).message}`);
-  }
-}
-
-function normalizeAnalysis(raw: unknown, durationSeconds: number): AnalysisResult {
-  const data = raw as Partial<AnalysisResult> & { segments?: unknown[] };
-  const segments = Array.isArray(data.segments) ? data.segments : [];
-
-  const normalizedSegments = segments
-    .map((seg, index) => {
-      const s = seg as { start?: number; end?: number; text?: string };
-      const start = Math.max(0, Number(s.start) || 0);
-      const end = Math.max(start + 0.5, Number(s.end) || start + 3);
-      return {
-        id: `seg-${index + 1}`,
-        start,
-        end: Math.min(end, durationSeconds + 5),
-        text: String(s.text ?? "").trim()
-      };
-    })
-    .filter((seg) => seg.text.length > 0)
+/**
+ * Sorts segments, clamps them into the video and removes overlaps, since the
+ * schema guarantees shape but not sensible timing.
+ */
+export function normalizeAnalysis(data: RawAnalysis, durationSeconds: number): AnalysisResult {
+  const sorted = data.segments
+    .map((s) => ({ start: Math.max(0, s.start), end: s.end, text: s.text.trim() }))
+    .filter((s) => s.text.length > 0 && s.start < durationSeconds)
     .sort((a, b) => a.start - b.start);
 
+  const segments = sorted.map((s, index) => {
+    const nextStart = sorted[index + 1]?.start ?? durationSeconds;
+    const end = Math.min(Math.max(s.end, s.start + 0.5), nextStart, durationSeconds);
+    return { id: `seg-${index + 1}`, start: s.start, end: Math.max(end, s.start), text: s.text };
+  });
+
   return {
-    topic: String(data.topic ?? "Unbekanntes Tool"),
-    title: String(data.title ?? "Tool-Demo"),
-    description: String(data.description ?? ""),
-    chapters: Array.isArray(data.chapters)
-      ? data.chapters.map((c) => {
-          const ch = c as { time?: number; label?: string };
-          return { time: Number(ch.time) || 0, label: String(ch.label ?? "") };
-        })
-      : [],
-    segments: normalizedSegments,
+    topic: data.topic || "Unbekanntes Tool",
+    title: data.title || "Tool-Demo",
+    description: data.description,
+    chapters: data.chapters
+      .map((c) => ({ time: Math.max(0, c.time), label: c.label }))
+      .sort((a, b) => a.time - b.time),
+    segments,
     durationSeconds
   };
 }

@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { jobDir, readJobMeta, updateJobMeta } from "@/lib/jobStore";
 import { synthesizeSpeech } from "@/lib/elevenlabs";
+import { getDurationSeconds } from "@/lib/ffmpeg";
 import type { VoiceoverRequestBody } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -23,9 +24,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await mkdir(audioDir, { recursive: true });
 
     const segmentAudioFiles: Record<string, string> = {};
+    const segmentAudioDurations: Record<string, number> = {};
 
     // Sequential to stay within ElevenLabs rate limits and keep errors attributable.
-    for (const segment of body.segments) {
+    for (const [index, segment] of body.segments.entries()) {
       const audioBuffer = await synthesizeSpeech({
         voiceId: body.voiceId,
         text: segment.text,
@@ -34,9 +36,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         similarityBoost: body.similarityBoost,
         style: body.style
       });
-      const fileName = `${segment.id}.mp3`;
-      await writeFile(path.join(audioDir, fileName), audioBuffer);
+      // Index-based name: segment ids come from the client and must not reach the filesystem.
+      const fileName = `segment-${String(index + 1).padStart(3, "0")}.mp3`;
+      const filePath = path.join(audioDir, fileName);
+      await writeFile(filePath, audioBuffer);
       segmentAudioFiles[segment.id] = fileName;
+      segmentAudioDurations[segment.id] = await getDurationSeconds(filePath);
     }
 
     // Keep the (possibly edited) segments the client sent as the source of truth.
@@ -44,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const updated = await updateJobMeta(id, {
       stage: "voiced",
       segmentAudioFiles,
+      segmentAudioDurations,
       analysis: current.analysis
         ? { ...current.analysis, segments: body.segments }
         : {

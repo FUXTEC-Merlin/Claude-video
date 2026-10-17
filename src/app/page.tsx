@@ -4,6 +4,7 @@ import { useState } from "react";
 import Recorder from "@/components/Recorder";
 import ScriptEditor from "@/components/ScriptEditor";
 import VoiceSelector from "@/components/VoiceSelector";
+import { mapSourceTime } from "@/lib/timeline";
 import type { AnalyzeRequestBody, JobMeta, ScriptSegment } from "@/lib/types";
 
 type Step = "record" | "uploading" | "analyze" | "script" | "voicing" | "rendering" | "done";
@@ -187,7 +188,15 @@ export default function Home() {
 
           <div className="card p-6 flex flex-col gap-4">
             <h2 className="text-lg font-semibold">3. Skript prüfen & anpassen</h2>
-            <ScriptEditor segments={segments} onChange={setSegments} />
+            <p className="text-sm text-white/50">
+              Die Stimme darf jeweils bis zum Start des nächsten Segments sprechen. Ist ein Text zu
+              lang, wird er leicht beschleunigt und notfalls das Video kurz angehalten.
+            </p>
+            <ScriptEditor
+              segments={segments}
+              durationSeconds={job.durationSeconds ?? job.analysis.durationSeconds}
+              onChange={setSegments}
+            />
           </div>
 
           <div className="card p-6 flex flex-col gap-4">
@@ -215,6 +224,7 @@ export default function Home() {
             controls
             className="w-full rounded-xl border border-border bg-black"
           />
+          {job.timeline && <TimelineSummary job={job} />}
           <div className="flex gap-3">
             <a className="btn btn-primary" href={`/api/jobs/${job.id}/download`} download>
               Video herunterladen
@@ -234,6 +244,43 @@ function StatusCard({ text }: { text: string }) {
     <div className="card p-8 flex items-center gap-3 justify-center">
       <span className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
       <p className="text-white/70">{text}</p>
+    </div>
+  );
+}
+
+function formatChapterTime(sec: number): string {
+  const total = Math.floor(sec);
+  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, "0")}`;
+}
+
+function TimelineSummary({ job }: { job: JobMeta }) {
+  const timeline = job.timeline!;
+  const spedUp = timeline.placements.filter((p) => p.speed > 1.001).length;
+  const frozen = timeline.freezes.reduce((sum, f) => sum + f.duration, 0);
+  // Chapter marks move with the freezes, so YouTube timestamps stay correct.
+  const chapters = (job.analysis?.chapters ?? []).map((c) => ({
+    ...c,
+    time: mapSourceTime(timeline, c.time)
+  }));
+
+  return (
+    <div className="flex flex-col gap-3 text-sm text-white/60">
+      <p>
+        Länge {formatChapterTime(timeline.outputDuration)}
+        {spedUp > 0 && ` · ${spedUp} Segment(e) leicht beschleunigt`}
+        {frozen > 0 && ` · Video an ${timeline.freezes.length} Stelle(n) insgesamt ${frozen.toFixed(1)}s angehalten`}
+      </p>
+      {chapters.length > 0 && (
+        <div>
+          <label className="text-xs text-white/50">Kapitel für die YouTube-Beschreibung</label>
+          <textarea
+            className="textarea mt-1 font-mono text-xs"
+            rows={Math.min(chapters.length, 8)}
+            readOnly
+            value={chapters.map((c) => `${formatChapterTime(c.time)} ${c.label}`).join("\n")}
+          />
+        </div>
+      )}
     </div>
   );
 }

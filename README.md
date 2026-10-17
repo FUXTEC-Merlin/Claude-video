@@ -46,6 +46,34 @@ Aufnahme nach der Bildschirmfreigabe (Chrome/Edge empfohlen).
 > **Hinweis:** Screen-Recording per `getDisplayMedia` funktioniert nur über `https://` oder
 > `localhost`. Für lokale Entwicklung ist `localhost:3000` also ohne weitere Konfiguration nutzbar.
 
+## Timing
+
+Claude plant die Segmente auf ca. 2,3 Wörter pro Sekunde, aber die echte Sprechdauer der
+KI-Stimme weicht davon ab. Deshalb wird nach der Vertonung jede Aufnahme gemessen und auf die
+Zeitleiste eingepasst (`src/lib/timeline.ts`):
+
+- Ein Segment darf bis zum Start des nächsten Segments (bzw. bis zum Videoende) sprechen.
+- Ist die Aufnahme länger, wird sie um bis zu 15 % beschleunigt.
+- Reicht das nicht, wird das Video vor dem nächsten Segment auf dem letzten Bild angehalten, bis
+  der Satz zu Ende ist. Spätere Segmente und die Kapitelmarken verschieben sich entsprechend.
+
+Schon im Skript-Editor zeigt jedes Segment eine Schätzung („passt“, „knapp“, „zu lang“), damit
+zu lange Texte vor der Vertonung gekürzt werden können. Nach dem Rendern zeigt die App, wo
+beschleunigt bzw. angehalten wurde, und liefert die angepassten Kapitel für die
+YouTube-Beschreibung.
+
+Beim Upload wird die Browser-Aufnahme (WebM) einmal in ein MP4 mit konstanter Bildrate
+umgewandelt, damit Länge, Frame-Extraktion und Schnitte zuverlässig sind.
+
+## Tests
+
+```bash
+npm test
+```
+
+Testet die Zeitleisten-Logik und rendert ein synthetisches Testvideo mit ffmpeg (keine API-Keys
+nötig).
+
 ## Architektur
 
 ```
@@ -67,7 +95,8 @@ src/
   lib/
     anthropic.ts   Claude-Vision-Prompt & JSON-Parsing
     elevenlabs.ts  ElevenLabs REST-Client (Voices, TTS)
-    ffmpeg.ts      Frame-Extraktion & finales Video-Rendering
+    ffmpeg.ts      Normalisierung, Frame-Extraktion & finales Video-Rendering
+    timeline.ts    Einpassen der Sprachaufnahmen (Beschleunigen, Standbilder)
     jobStore.ts    Dateibasierte Job-Verwaltung (data/jobs/<id>/)
     types.ts       Gemeinsame Typen
 ```
@@ -77,8 +106,7 @@ Audio-Segmente und das fertige Video ab (per `.gitignore` ausgeschlossen).
 
 ## Bekannte Grenzen
 
-- Die Video-/Audio-Synchronisation basiert auf den von Claude vorgeschlagenen Zeitstempeln —
-  bei Bedarf im Skript-Editor manuell nachjustieren.
+- Die Startzeiten der Segmente stammen von Claude — bei Bedarf im Skript-Editor nachjustieren.
 - Sehr lange Aufnahmen werden auf ~36 Screenshots verdichtet, damit die Analyse performant und
   kosteneffizient bleibt.
 - Es wird kein Mikrofon aufgenommen; optional kann Tab-/System-Ton mit aufgezeichnet werden.

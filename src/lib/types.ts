@@ -1,3 +1,5 @@
+import type { Timeline } from "./timeline";
+
 export interface ScriptSegment {
   id: string;
   start: number;
@@ -40,12 +42,19 @@ export interface JobMeta {
   id: string;
   createdAt: string;
   stage: JobStage;
+  /** Normalized constant-frame-rate MP4 used for analysis and rendering. */
   recordingFile: string;
+  /** The file as uploaded by the browser. */
+  sourceFile?: string;
   durationSeconds?: number;
   analysis?: AnalysisResult;
   voiceId?: string;
   modelId?: string;
   segmentAudioFiles?: Record<string, string>;
+  /** Measured length of each generated clip in seconds, keyed by segment id. */
+  segmentAudioDurations?: Record<string, number>;
+  /** How the clips were fitted in the last render (speed-ups, freezes). */
+  timeline?: Timeline;
   renderedFile?: string;
   error?: string;
 }
