@@ -7,6 +7,8 @@ import type { ScriptSegment } from "@/lib/types";
 interface ScriptEditorProps {
   segments: ScriptSegment[];
   durationSeconds: number;
+  /** Real clip lengths of segments whose current text is already voiced. */
+  voicedDurations?: Map<string, number>;
   onChange: (segments: ScriptSegment[]) => void;
 }
 
@@ -38,22 +40,31 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function ScriptEditor({ segments, durationSeconds, onChange }: ScriptEditorProps) {
+export default function ScriptEditor({
+  segments,
+  durationSeconds,
+  voicedDurations,
+  onChange
+}: ScriptEditorProps) {
   const totalWords = useMemo(
     () => segments.reduce((sum, s) => sum + s.text.split(/\s+/).filter(Boolean).length, 0),
     [segments]
   );
 
-  // Same fitting logic as the renderer, fed with estimated speech lengths.
+  // Same fitting logic as the renderer, fed with real clip lengths where a segment is
+  // already voiced and estimated speech lengths otherwise.
   const estimate = useMemo(() => {
+    const spoken = segments.filter((s) => s.text.trim());
     const timeline = buildTimeline(
-      segments
-        .filter((s) => s.text.trim())
-        .map((s) => ({ id: s.id, start: s.start, audioDuration: estimateSpeechSeconds(s.text) })),
+      spoken.map((s) => ({
+        id: s.id,
+        start: s.start,
+        audioDuration: voicedDurations?.get(s.id) ?? estimateSpeechSeconds(s.text)
+      })),
       durationSeconds
     );
     // The renderer ignores `end`: each segment may speak until the next one starts.
-    const sorted = [...segments].sort((a, b) => a.start - b.start);
+    const sorted = [...spoken].sort((a, b) => a.start - b.start);
     const slotEndById = new Map(
       sorted.map((s, i) => [s.id, Math.min(sorted[i + 1]?.start ?? durationSeconds, durationSeconds)])
     );
@@ -62,7 +73,7 @@ export default function ScriptEditor({ segments, durationSeconds, onChange }: Sc
       slotEndById,
       extraSeconds: timeline.outputDuration - durationSeconds
     };
-  }, [segments, durationSeconds]);
+  }, [segments, durationSeconds, voicedDurations]);
 
   function updateSegment(id: string, patch: Partial<ScriptSegment>) {
     onChange(segments.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -113,6 +124,14 @@ export default function ScriptEditor({ segments, durationSeconds, onChange }: Sc
                 onChange={(e) => updateSegment(segment.id, { start: Number(e.target.value) })}
               />
               <span className="ml-auto flex items-center gap-2">
+                {voicedDurations?.has(segment.id) && (
+                  <span
+                    className="pill bg-white/5 text-white/50"
+                    title="Dieser Text ist bereits vertont und wird nicht neu erzeugt. Die Einschätzung nutzt die echte Länge."
+                  >
+                    vertont
+                  </span>
+                )}
                 <FitBadge placement={estimate.byId.get(segment.id)} />
                 <span title="Die Stimme darf bis zum Start des nächsten Segments sprechen.">
                   {formatTime(segment.start)} – {formatTime(estimate.slotEndById.get(segment.id) ?? segment.end)}

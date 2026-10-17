@@ -20,6 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "video/mp4",
+        "Cache-Control": "no-store",
         "Content-Disposition": `attachment; filename="${safeTitle}.mp4"`
       }
     });

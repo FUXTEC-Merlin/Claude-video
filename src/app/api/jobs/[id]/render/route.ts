@@ -11,8 +11,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const { id } = params;
   try {
     const meta = await readJobMeta(id);
-    const audioFiles = meta.segmentAudioFiles;
-    if (!meta.analysis || !audioFiles) {
+    const segmentAudio = meta.segmentAudio;
+    if (!meta.analysis || !segmentAudio) {
       return NextResponse.json(
         { error: "Voiceover wurde noch nicht generiert. Bitte zuerst /voiceover ausführen." },
         { status: 400 }
@@ -26,15 +26,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const audioDir = path.join(dir, "audio");
     const sourceDuration = meta.durationSeconds || (await getDurationSeconds(videoPath));
 
-    const voiced = meta.analysis.segments.filter((seg) => audioFiles[seg.id]);
-    const inputs = await Promise.all(
-      voiced.map(async (seg) => {
-        const filePath = path.join(audioDir, audioFiles[seg.id]);
-        const audioDuration =
-          meta.segmentAudioDurations?.[seg.id] ?? (await getDurationSeconds(filePath));
-        return { id: seg.id, start: seg.start, audioDuration, filePath };
-      })
-    );
+    const inputs = meta.analysis.segments
+      .filter((seg) => segmentAudio[seg.id])
+      .map((seg) => ({
+        id: seg.id,
+        start: seg.start,
+        audioDuration: segmentAudio[seg.id].duration,
+        filePath: path.join(audioDir, segmentAudio[seg.id].file)
+      }));
 
     const timeline = buildTimeline(inputs, sourceDuration);
     const fileById = new Map(inputs.map((input) => [input.id, input.filePath]));
@@ -49,6 +48,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const updated = await updateJobMeta(id, {
       stage: "rendered",
       renderedFile: outFile,
+      renderedAt: new Date().toISOString(),
       timeline
     });
     return NextResponse.json({ job: updated });

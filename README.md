@@ -62,6 +62,12 @@ zu lange Texte vor der Vertonung gekürzt werden können. Nach dem Rendern zeigt
 beschleunigt bzw. angehalten wurde, und liefert die angepassten Kapitel für die
 YouTube-Beschreibung.
 
+Nach dem Rendern führt „Zurück zum Skript“ wieder in den Editor. Bereits vertonte Segmente sind
+markiert und zeigen ihre echte Länge statt einer Schätzung. Beim erneuten Rendern werden nur
+Segmente neu vertont, deren Text (oder Stimme) sich geändert hat — die Sprachaufnahmen werden
+anhand von Text und Stimmeinstellungen zwischengespeichert. Reine Zeitänderungen kosten also
+kein ElevenLabs-Guthaben.
+
 Beim Upload wird die Browser-Aufnahme (WebM) einmal in ein MP4 mit konstanter Bildrate
 umgewandelt, damit Länge, Frame-Extraktion und Schnitte zuverlässig sind.
 
@@ -71,8 +77,8 @@ umgewandelt, damit Länge, Frame-Extraktion und Schnitte zuverlässig sind.
 npm test
 ```
 
-Testet die Zeitleisten-Logik und rendert ein synthetisches Testvideo mit ffmpeg (keine API-Keys
-nötig).
+Testet die Zeitleisten-Logik, die Wiederverwendung von Sprachaufnahmen (ElevenLabs gemockt)
+und rendert ein synthetisches Testvideo mit ffmpeg (keine API-Keys nötig).
 
 ## Architektur
 
@@ -97,6 +103,7 @@ src/
     elevenlabs.ts  ElevenLabs REST-Client (Voices, TTS)
     ffmpeg.ts      Normalisierung, Frame-Extraktion & finales Video-Rendering
     timeline.ts    Einpassen der Sprachaufnahmen (Beschleunigen, Standbilder)
+    voiceCache.ts  Dateinamen für zwischengespeicherte Sprachaufnahmen
     jobStore.ts    Dateibasierte Job-Verwaltung (data/jobs/<id>/)
     types.ts       Gemeinsame Typen
 ```

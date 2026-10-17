@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Recorder from "@/components/Recorder";
 import ScriptEditor from "@/components/ScriptEditor";
 import VoiceSelector from "@/components/VoiceSelector";
@@ -20,6 +20,21 @@ export default function Home() {
 
   const [voiceId, setVoiceId] = useState("");
   const [segments, setSegments] = useState<ScriptSegment[]>([]);
+
+  // Segments whose current text was already voiced with the selected voice; the
+  // server reuses those clips, so only the rest costs ElevenLabs credits.
+  const voicedDurations = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!job?.segmentAudio || job.voiceId !== voiceId) return map;
+    for (const segment of segments) {
+      const audio = job.segmentAudio[segment.id];
+      if (audio && audio.text.trim() === segment.text.trim()) map.set(segment.id, audio.duration);
+    }
+    return map;
+  }, [job, segments, voiceId]);
+  const segmentsToVoice = segments.filter(
+    (s) => s.text.trim() && !voicedDurations.has(s.id)
+  ).length;
 
   async function handleRecorded(blob: Blob) {
     setError(null);
@@ -195,6 +210,7 @@ export default function Home() {
             <ScriptEditor
               segments={segments}
               durationSeconds={job.durationSeconds ?? job.analysis.durationSeconds}
+              voicedDurations={voicedDurations}
               onChange={setSegments}
             />
           </div>
@@ -207,20 +223,33 @@ export default function Home() {
               disabled={!voiceId || segments.length === 0}
               onClick={generateVoiceover}
             >
-              Stimme generieren & Video rendern
+              {voicedDurations.size === 0
+                ? "Stimme generieren & Video rendern"
+                : segmentsToVoice > 0
+                  ? `${segmentsToVoice} Segment(e) neu vertonen & Video rendern`
+                  : "Video neu rendern (keine Neuvertonung nötig)"}
             </button>
           </div>
         </div>
       )}
 
-      {step === "voicing" && <StatusCard text="ElevenLabs erzeugt die Stimme für jedes Segment…" />}
+      {step === "voicing" && (
+        <StatusCard
+          text={
+            segmentsToVoice > 0
+              ? `ElevenLabs vertont ${segmentsToVoice} Segment(e)…`
+              : "Vorhandene Sprachaufnahmen werden übernommen…"
+          }
+        />
+      )}
       {step === "rendering" && <StatusCard text="Video wird mit der Stimme zusammengeschnitten…" />}
 
       {step === "done" && job?.renderedFile && (
         <div className="card p-6 flex flex-col gap-4">
           <h2 className="text-lg font-semibold">Fertig 🎬</h2>
           <video
-            src={`/api/jobs/${job.id}/download`}
+            key={job.renderedAt}
+            src={`/api/jobs/${job.id}/download?v=${encodeURIComponent(job.renderedAt ?? "")}`}
             controls
             className="w-full rounded-xl border border-border bg-black"
           />
@@ -229,6 +258,9 @@ export default function Home() {
             <a className="btn btn-primary" href={`/api/jobs/${job.id}/download`} download>
               Video herunterladen
             </a>
+            <button className="btn btn-secondary" onClick={() => setStep("script")}>
+              Zurück zum Skript
+            </button>
             <button className="btn btn-secondary" onClick={reset}>
               Neues Video aufnehmen
             </button>

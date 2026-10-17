@@ -38,6 +38,15 @@ export type JobStage =
   | "rendered"
   | "error";
 
+export interface SegmentAudio {
+  /** File name in the job's audio directory (content-addressed, see voiceCache). */
+  file: string;
+  /** Text the clip was generated from; lets the editor tell which segments changed. */
+  text: string;
+  /** Measured length in seconds. */
+  duration: number;
+}
+
 export interface JobMeta {
   id: string;
   createdAt: string;
@@ -50,12 +59,13 @@ export interface JobMeta {
   analysis?: AnalysisResult;
   voiceId?: string;
   modelId?: string;
-  segmentAudioFiles?: Record<string, string>;
-  /** Measured length of each generated clip in seconds, keyed by segment id. */
-  segmentAudioDurations?: Record<string, number>;
+  /** Generated voiceover per segment id, from the last voiceover run. */
+  segmentAudio?: Record<string, SegmentAudio>;
   /** How the clips were fitted in the last render (speed-ups, freezes). */
   timeline?: Timeline;
   renderedFile?: string;
+  /** Set on every render; used to bust the browser cache of the download URL. */
+  renderedAt?: string;
   error?: string;
 }
 
